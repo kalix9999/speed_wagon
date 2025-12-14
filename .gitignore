@@ -20,11 +20,7 @@ build/
 ####################################
 # IDE / Eclipse / CubeIDE 관련
 ####################################
-.metadata/
-.settings/
-.project
-.cproject
-*.launch
+
 
 ####################################
 # CubeIDE 자동 생성 파일
