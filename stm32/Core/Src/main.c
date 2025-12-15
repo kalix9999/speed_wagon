@@ -515,7 +515,7 @@ void StartDefaultTask(void const * argument)
 			  // 속도 = 주파수 / 44 (24.125GHz 기준)
 			  uint32_t speed_x10 = (freq_hz * 10) / 44;
 
-//			  printf("Freq: %lu Hz, Speed: %lu.%lu km/h\r\n", freq_hz, speed_x10/10, speed_x10%10);
+			  printf("Freq: %lu Hz, Speed: %lu.%lu km/h\r\n", freq_hz, speed_x10/10, speed_x10%10);
 			  sprintf(debug_buffer, "Freq: %lu Hz, Speed: %lu.%lu km/h", freq_hz, speed_x10/10, speed_x10%10);
 			  debug_speed = speed_x10/10;
 		  }
