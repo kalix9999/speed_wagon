@@ -24,6 +24,7 @@
 /* USER CODE BEGIN Includes */
 #include <stdio.h>
 #include "arm_math.h"  // DSP 라이브러리 (FFT용)
+#include "fnd.h"
 
 /* USER CODE END Includes */
 
@@ -47,6 +48,7 @@
 ADC_HandleTypeDef hadc1;
 DMA_HandleTypeDef hdma_adc1;
 
+TIM_HandleTypeDef htim2;
 TIM_HandleTypeDef htim3;
 
 UART_HandleTypeDef huart2;
@@ -72,6 +74,7 @@ volatile uint32_t debug_speed = 0;   // 계산된 속도
 volatile uint32_t debug_freq = 0;    // 계산된 주파수
 volatile int32_t debug_maxVal = 0;   // 신호 세기 (Magnitude)
 volatile uint32_t debug_isr_cnt = 0; // 인터럽트 횟수 카운터
+volatile q15_t debug_mag = 0; // 푸리에 편환 주파수별 세기 그래프 보기용도
 char debug_buffer[100]; // 디버그 출력
 
 // FFT 구조체 인스턴스
@@ -86,6 +89,7 @@ static void MX_DMA_Init(void);
 static void MX_USART2_UART_Init(void);
 static void MX_ADC1_Init(void);
 static void MX_TIM3_Init(void);
+static void MX_TIM2_Init(void);
 void StartDefaultTask(void const * argument);
 
 /* USER CODE BEGIN PFP */
@@ -135,8 +139,10 @@ int main(void)
   MX_USART2_UART_Init();
   MX_ADC1_Init();
   MX_TIM3_Init();
+  MX_TIM2_Init();
   /* USER CODE BEGIN 2 */
-
+  FND_Init();
+  HAL_TIM_Base_Start_IT(&htim2);
   /* USER CODE END 2 */
 
   /* USER CODE BEGIN RTOS_MUTEX */
@@ -284,6 +290,51 @@ static void MX_ADC1_Init(void)
 }
 
 /**
+  * @brief TIM2 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_TIM2_Init(void)
+{
+
+  /* USER CODE BEGIN TIM2_Init 0 */
+
+  /* USER CODE END TIM2_Init 0 */
+
+  TIM_ClockConfigTypeDef sClockSourceConfig = {0};
+  TIM_MasterConfigTypeDef sMasterConfig = {0};
+
+  /* USER CODE BEGIN TIM2_Init 1 */
+
+  /* USER CODE END TIM2_Init 1 */
+  htim2.Instance = TIM2;
+  htim2.Init.Prescaler = 83;
+  htim2.Init.CounterMode = TIM_COUNTERMODE_UP;
+  htim2.Init.Period = 998;
+  htim2.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
+  htim2.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
+  if (HAL_TIM_Base_Init(&htim2) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sClockSourceConfig.ClockSource = TIM_CLOCKSOURCE_INTERNAL;
+  if (HAL_TIM_ConfigClockSource(&htim2, &sClockSourceConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sMasterConfig.MasterOutputTrigger = TIM_TRGO_RESET;
+  sMasterConfig.MasterSlaveMode = TIM_MASTERSLAVEMODE_DISABLE;
+  if (HAL_TIMEx_MasterConfigSynchronization(&htim2, &sMasterConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN TIM2_Init 2 */
+
+  /* USER CODE END TIM2_Init 2 */
+
+}
+
+/**
   * @brief TIM3 Initialization Function
   * @param None
   * @retval None
@@ -393,10 +444,21 @@ static void MX_GPIO_Init(void)
   __HAL_RCC_GPIOC_CLK_ENABLE();
   __HAL_RCC_GPIOH_CLK_ENABLE();
   __HAL_RCC_GPIOA_CLK_ENABLE();
+  __HAL_RCC_GPIOD_CLK_ENABLE();
   __HAL_RCC_GPIOB_CLK_ENABLE();
 
   /*Configure GPIO pin Output Level */
-  HAL_GPIO_WritePin(LD2_GPIO_Port, LD2_Pin, GPIO_PIN_RESET);
+  HAL_GPIO_WritePin(GPIOA, LD2_Pin|seg_12_Pin|seg_9_Pin, GPIO_PIN_RESET);
+
+  /*Configure GPIO pin Output Level */
+  HAL_GPIO_WritePin(GPIOC, seg_6_Pin|seg_5_Pin|seg_11_Pin|seg_1_Pin
+                          |seg_3_Pin|seg_2_Pin, GPIO_PIN_RESET);
+
+  /*Configure GPIO pin Output Level */
+  HAL_GPIO_WritePin(seg_4_GPIO_Port, seg_4_Pin, GPIO_PIN_RESET);
+
+  /*Configure GPIO pin Output Level */
+  HAL_GPIO_WritePin(GPIOB, seg_8_Pin|seg_10_Pin|seg_7_Pin, GPIO_PIN_RESET);
 
   /*Configure GPIO pin : B1_Pin */
   GPIO_InitStruct.Pin = B1_Pin;
@@ -404,12 +466,35 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   HAL_GPIO_Init(B1_GPIO_Port, &GPIO_InitStruct);
 
-  /*Configure GPIO pin : LD2_Pin */
-  GPIO_InitStruct.Pin = LD2_Pin;
+  /*Configure GPIO pins : LD2_Pin seg_12_Pin seg_9_Pin */
+  GPIO_InitStruct.Pin = LD2_Pin|seg_12_Pin|seg_9_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
-  HAL_GPIO_Init(LD2_GPIO_Port, &GPIO_InitStruct);
+  HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
+
+  /*Configure GPIO pins : seg_6_Pin seg_5_Pin seg_11_Pin seg_1_Pin
+                           seg_3_Pin seg_2_Pin */
+  GPIO_InitStruct.Pin = seg_6_Pin|seg_5_Pin|seg_11_Pin|seg_1_Pin
+                          |seg_3_Pin|seg_2_Pin;
+  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
+  HAL_GPIO_Init(GPIOC, &GPIO_InitStruct);
+
+  /*Configure GPIO pin : seg_4_Pin */
+  GPIO_InitStruct.Pin = seg_4_Pin;
+  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
+  HAL_GPIO_Init(seg_4_GPIO_Port, &GPIO_InitStruct);
+
+  /*Configure GPIO pins : seg_8_Pin seg_10_Pin seg_7_Pin */
+  GPIO_InitStruct.Pin = seg_8_Pin|seg_10_Pin|seg_7_Pin;
+  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
+  HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
 
   /* USER CODE BEGIN MX_GPIO_Init_2 */
 
@@ -487,21 +572,31 @@ void StartDefaultTask(void const * argument)
 		  // Peak 찾기 및 출력 로직
 		  q15_t maxVal;
 		  uint32_t maxIndex;
-		  int start_index = 5; // 저주파 노이즈 제거
+		  int start_index = 1; // 저주파 노이즈 제거
 		  arm_max_q15(&fft_mag_q15[start_index], (FFT_LEN / 2) - start_index, &maxVal, &maxIndex);
 		  maxIndex += start_index;
 
 		  debug_maxVal = maxVal;
-		  if (maxVal > 200) // 노이즈 임계값
+		  debug_mag = 1<<12;
+		  if (maxVal > 500) // 노이즈 임계값
 		  {
 			  uint32_t freq_hz = (maxIndex * SAMPLE_RATE) / FFT_LEN;
 			  // 속도 = 주파수 / 44 (24.125GHz 기준)
 			  uint32_t speed_x10 = (freq_hz * 10) / 44;
 
+			  //세그먼트 출력
+			  FND_SetNumber(speed_x10);
+
 			  printf("Freq: %lu Hz, Speed: %lu.%lu km/h\r\n", freq_hz, speed_x10/10, speed_x10%10);
 			  sprintf(debug_buffer, "Freq: %lu Hz, Speed: %lu.%lu km/h", freq_hz, speed_x10/10, speed_x10%10);
 			  debug_speed = speed_x10/10;
 		  }
+		  // fft결과 디버깅용
+//		  for(volatile int i = 0 ; i<FFT_LEN; i++){
+//			  debug_mag = fft_mag_q15[i];
+//			  for(volatile int k=0; k<1000; k++); // 데이터 유실방지용
+//		  }
+
 	  }
 	  HAL_GPIO_TogglePin(LD2_GPIO_Port, LD2_Pin);
   }
@@ -526,7 +621,10 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
     HAL_IncTick();
   }
   /* USER CODE BEGIN Callback 1 */
-
+  if (htim->Instance == TIM2) {
+//	  printf("tim2 alive\r\n");
+	  FND_Update();
+  }
   /* USER CODE END Callback 1 */
 }
 

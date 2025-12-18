@@ -65,12 +65,36 @@ void Error_Handler(void);
 #define USART_RX_GPIO_Port GPIOA
 #define LD2_Pin GPIO_PIN_5
 #define LD2_GPIO_Port GPIOA
+#define seg_12_Pin GPIO_PIN_6
+#define seg_12_GPIO_Port GPIOA
+#define seg_9_Pin GPIO_PIN_7
+#define seg_9_GPIO_Port GPIOA
+#define seg_6_Pin GPIO_PIN_7
+#define seg_6_GPIO_Port GPIOC
+#define seg_5_Pin GPIO_PIN_8
+#define seg_5_GPIO_Port GPIOC
+#define seg_11_Pin GPIO_PIN_9
+#define seg_11_GPIO_Port GPIOC
 #define TMS_Pin GPIO_PIN_13
 #define TMS_GPIO_Port GPIOA
 #define TCK_Pin GPIO_PIN_14
 #define TCK_GPIO_Port GPIOA
+#define seg_1_Pin GPIO_PIN_10
+#define seg_1_GPIO_Port GPIOC
+#define seg_3_Pin GPIO_PIN_11
+#define seg_3_GPIO_Port GPIOC
+#define seg_2_Pin GPIO_PIN_12
+#define seg_2_GPIO_Port GPIOC
+#define seg_4_Pin GPIO_PIN_2
+#define seg_4_GPIO_Port GPIOD
 #define SWO_Pin GPIO_PIN_3
 #define SWO_GPIO_Port GPIOB
+#define seg_8_Pin GPIO_PIN_6
+#define seg_8_GPIO_Port GPIOB
+#define seg_10_Pin GPIO_PIN_8
+#define seg_10_GPIO_Port GPIOB
+#define seg_7_Pin GPIO_PIN_9
+#define seg_7_GPIO_Port GPIOB
 
 /* USER CODE BEGIN Private defines */
 
