@@ -95,7 +95,7 @@ void FND_Update(void) {
 
     // 3. 세그먼트 제어 (Common Anode -> 켜려면 LOW)
     uint8_t pattern = NUMBER_PATTERN[num_to_show];
-    if(current_digit==2 && g_fndDisplayValue<10) pattern |= 0x80; // 10이하면 소수점(dp) 켜기
+    if(current_digit==2) pattern |= 0x80; // 10이하면 소수점(dp) 켜기
     for(int i=0; i<8; i++) {
         if((pattern >> i) & 1) {
             HAL_GPIO_WritePin(SEG_PINS[i].port, SEG_PINS[i].pin, GPIO_PIN_RESET);
