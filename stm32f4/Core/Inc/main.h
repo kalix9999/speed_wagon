@@ -31,12 +31,15 @@ extern "C" {
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
-
+#include <stdbool.h>
 /* USER CODE END Includes */
 
 /* Exported types ------------------------------------------------------------*/
 /* USER CODE BEGIN ET */
-
+typedef struct __attribute__((packed)){
+	int speed;
+	bool is_overspeed;
+}Packet;
 /* USER CODE END ET */
 
 /* Exported constants --------------------------------------------------------*/
