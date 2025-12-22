@@ -27,6 +27,7 @@
 #include "fnd.h"
 #include <stdbool.h>
 
+
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -57,14 +58,16 @@ TIM_HandleTypeDef htim3;
 
 UART_HandleTypeDef huart2;
 
-osThreadId defaultTaskHandle;
+osThreadId FFTTaskHandle;
+osThreadId menuTaskHandle;
+osMessageQId buttonQueueHandle;
+osSemaphoreId adcBinarySemHandle; // 바이너리 세마포어 핸들
 /* USER CODE BEGIN PV */
-SPI_HandleTypeDef hspi2;
-Packet tx_data; // 보낼 ?��?��?��
-Packet rx_data; // 받을 ?��?��?�� (Master�? 보내?�� Dummy �? ???��?��)
-void Update_Sensor_Data_SPI(bool is_overspeed, int speed);
 
-osSemaphoreId myBinarySemHandle; // 세마포어 핸들
+SPI_HandleTypeDef hspi2;
+Packet tx_data; // 보낼 ?  ?  ?  
+Packet rx_data; // 받을 ?  ?  ?   (Master ? 보내?   Dummy  ? ???  ?  )
+void Update_Sensor_Data_SPI(bool is_overspeed, int speed);
 
 // 1. ADC 버퍼 (DMA가 데이터를 채워넣는 곳)
 // uint16_t 타입이어야 합니다 (ADC가 12비트 정수이므로)
@@ -99,7 +102,9 @@ static void MX_ADC1_Init(void);
 static void MX_TIM3_Init(void);
 static void MX_TIM2_Init(void);
 static void MX_SPI2_Init(void);
-void StartDefaultTask(void const * argument);
+void StartFFTTask(void const * argument);
+void StartMenuTask(void const * argument);
+
 
 /* USER CODE BEGIN PFP */
 
@@ -159,12 +164,12 @@ int main(void)
   /* add mutexes, ... */
   /* USER CODE END RTOS_MUTEX */
 
-  /* USER CODE BEGIN RTOS_SEMAPHORES */
+  /* Create the semaphores(s) */
+  /* definition and creation of adcBinarySem */
+  osSemaphoreDef(adcBinarySem);
+  adcBinarySemHandle = osSemaphoreCreate(osSemaphore(adcBinarySem), 1);
 
-  // 세마포어 정의 (이름은 myBinarySem)
-  osSemaphoreDef(myBinarySem);
-  // 세마포어 생성 (1은 토큰 개수. 1개면 바이너리 세마포어가 됨)
-  myBinarySemHandle = osSemaphoreCreate(osSemaphore(myBinarySem), 1);
+  /* USER CODE BEGIN RTOS_SEMAPHORES */
 
   /* USER CODE END RTOS_SEMAPHORES */
 
@@ -172,14 +177,23 @@ int main(void)
   /* start timers, add new ones, ... */
   /* USER CODE END RTOS_TIMERS */
 
+  /* Create the queue(s) */
+  /* definition and creation of buttonQueue */
+  osMessageQDef(buttonQueue, 16, uint16_t);
+  buttonQueueHandle = osMessageCreate(osMessageQ(buttonQueue), NULL);
+
   /* USER CODE BEGIN RTOS_QUEUES */
   /* add queues, ... */
   /* USER CODE END RTOS_QUEUES */
 
   /* Create the thread(s) */
-  /* definition and creation of defaultTask */
-  osThreadDef(defaultTask, StartDefaultTask, osPriorityNormal, 0, 2048);
-  defaultTaskHandle = osThreadCreate(osThread(defaultTask), NULL);
+  /* definition and creation of FFTTask */
+  osThreadDef(FFTTask, StartFFTTask, osPriorityHigh, 0, 2048);
+  FFTTaskHandle = osThreadCreate(osThread(FFTTask), NULL);
+
+  /* definition and creation of menuTask */
+  osThreadDef(menuTask, StartMenuTask, osPriorityNormal, 0, 128);
+  menuTaskHandle = osThreadCreate(osThread(menuTask), NULL);
 
   /* USER CODE BEGIN RTOS_THREADS */
   /* add threads, ... */
@@ -555,7 +569,7 @@ void HAL_ADC_ConvHalfCpltCallback(ADC_HandleTypeDef* hadc)
     if (hadc->Instance == ADC1)
     {
         process_offset = 0; // "앞부분(0번지)부터 읽어라"
-        osSemaphoreRelease(myBinarySemHandle); // 태스크 깨우기 🚩
+        osSemaphoreRelease(adcBinarySemHandle); // 태스크 깨우기 🚩
     }
 }
 
@@ -567,7 +581,7 @@ void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef* hadc)
         debug_isr_cnt++;
 
         process_offset = FFT_LEN; // "뒷부분(1024번지)부터 읽어라"
-        osSemaphoreRelease(myBinarySemHandle); // 태스크 깨우기 🚩
+        osSemaphoreRelease(adcBinarySemHandle); // 태스크 깨우기 🚩
 
     }
 }
@@ -587,14 +601,14 @@ void Update_Sensor_Data_SPI(bool _is_overspeed, int _speed){
 
 /* USER CODE END 4 */
 
-/* USER CODE BEGIN Header_StartDefaultTask */
+/* USER CODE BEGIN Header_StartFFTTask */
 /**
-  * @brief  Function implementing the defaultTask thread.
+  * @brief  Function implementing the FFTTask thread.
   * @param  argument: Not used
   * @retval None
   */
-/* USER CODE END Header_StartDefaultTask */
-void StartDefaultTask(void const * argument)
+/* USER CODE END Header_StartFFTTask */
+void StartFFTTask(void const * argument)
 {
   /* USER CODE BEGIN 5 */
   arm_rfft_init_q15(&S, FFT_LEN, 0, 1);
@@ -608,7 +622,7 @@ void StartDefaultTask(void const * argument)
   for(;;)
   {
 	  // [B] 신호 대기 (인터럽트가 깨울 때까지 잠듦) 💤
-	  if (osSemaphoreWait(myBinarySemHandle, osWaitForever) == osOK)
+	  if (osSemaphoreWait(adcBinarySemHandle, osWaitForever) == osOK)
 	  {
 		  // [C] 데이터 복사 (Ping-Pong 로직) 🏓
 		  // process_offset 변수가 가리키는 곳(0 또는 1024)에서 데이터를 가져옵니다.
@@ -665,6 +679,24 @@ void StartDefaultTask(void const * argument)
 	  HAL_GPIO_TogglePin(LD2_GPIO_Port, LD2_Pin);
   }
   /* USER CODE END 5 */
+}
+
+/* USER CODE BEGIN Header_StartMenuTask */
+/**
+* @brief Function implementing the menuTask thread.
+* @param argument: Not used
+* @retval None
+*/
+/* USER CODE END Header_StartMenuTask */
+void StartMenuTask(void const * argument)
+{
+  /* USER CODE BEGIN StartMenuTask */
+  /* Infinite loop */
+  for(;;)
+  {
+    osDelay(1);
+  }
+  /* USER CODE END StartMenuTask */
 }
 
 /**
