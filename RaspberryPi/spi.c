@@ -27,7 +27,7 @@ int main() {
     ioctl(fd, SPI_IOC_WR_BITS_PER_WORD, &bits);
     ioctl(fd, SPI_IOC_WR_MAX_SPEED_HZ, &speed);
 
-    printf("SPI 통신 시작 (크기: %d bytes)...\n", sizeof(Packet));
+    printf("SPI 통신 시작\n");
 
 
     struct spi_ioc_transfer tr = {
