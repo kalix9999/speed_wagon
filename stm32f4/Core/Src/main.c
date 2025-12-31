@@ -25,6 +25,7 @@
 #include <stdio.h>
 #include "arm_math.h"  // DSP 라이브러리 (FFT용)
 #include "fnd.h"
+#include "lcd.h"
 #include <stdbool.h>
 
 
@@ -51,6 +52,8 @@
 ADC_HandleTypeDef hadc1;
 DMA_HandleTypeDef hdma_adc1;
 
+I2C_HandleTypeDef hi2c3;
+
 SPI_HandleTypeDef hspi2;
 
 TIM_HandleTypeDef htim2;
@@ -61,7 +64,7 @@ UART_HandleTypeDef huart2;
 osThreadId FFTTaskHandle;
 osThreadId menuTaskHandle;
 osMessageQId buttonQueueHandle;
-osSemaphoreId adcBinarySemHandle; // 바이너리 세마포어 핸들
+osSemaphoreId adcBinarySemHandle;
 /* USER CODE BEGIN PV */
 
 SPI_HandleTypeDef hspi2;
@@ -102,9 +105,9 @@ static void MX_ADC1_Init(void);
 static void MX_TIM3_Init(void);
 static void MX_TIM2_Init(void);
 static void MX_SPI2_Init(void);
+static void MX_I2C3_Init(void);
 void StartFFTTask(void const * argument);
 void StartMenuTask(void const * argument);
-
 
 /* USER CODE BEGIN PFP */
 
@@ -155,6 +158,7 @@ int main(void)
   MX_TIM3_Init();
   MX_TIM2_Init();
   MX_SPI2_Init();
+  MX_I2C3_Init();
   /* USER CODE BEGIN 2 */
   FND_Init();
   HAL_TIM_Base_Start_IT(&htim2);
@@ -310,6 +314,40 @@ static void MX_ADC1_Init(void)
   /* USER CODE BEGIN ADC1_Init 2 */
 
   /* USER CODE END ADC1_Init 2 */
+
+}
+
+/**
+  * @brief I2C3 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_I2C3_Init(void)
+{
+
+  /* USER CODE BEGIN I2C3_Init 0 */
+
+  /* USER CODE END I2C3_Init 0 */
+
+  /* USER CODE BEGIN I2C3_Init 1 */
+
+  /* USER CODE END I2C3_Init 1 */
+  hi2c3.Instance = I2C3;
+  hi2c3.Init.ClockSpeed = 100000;
+  hi2c3.Init.DutyCycle = I2C_DUTYCYCLE_2;
+  hi2c3.Init.OwnAddress1 = 0;
+  hi2c3.Init.AddressingMode = I2C_ADDRESSINGMODE_7BIT;
+  hi2c3.Init.DualAddressMode = I2C_DUALADDRESS_DISABLE;
+  hi2c3.Init.OwnAddress2 = 0;
+  hi2c3.Init.GeneralCallMode = I2C_GENERALCALL_DISABLE;
+  hi2c3.Init.NoStretchMode = I2C_NOSTRETCH_DISABLE;
+  if (HAL_I2C_Init(&hi2c3) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN I2C3_Init 2 */
+
+  /* USER CODE END I2C3_Init 2 */
 
 }
 
@@ -512,20 +550,14 @@ static void MX_GPIO_Init(void)
   HAL_GPIO_WritePin(GPIOA, LD2_Pin|seg_12_Pin|seg_9_Pin, GPIO_PIN_RESET);
 
   /*Configure GPIO pin Output Level */
+  HAL_GPIO_WritePin(GPIOB, buz_Pin|seg_8_Pin|seg_10_Pin|seg_7_Pin, GPIO_PIN_RESET);
+
+  /*Configure GPIO pin Output Level */
   HAL_GPIO_WritePin(GPIOC, seg_6_Pin|seg_5_Pin|seg_11_Pin|seg_1_Pin
                           |seg_3_Pin|seg_2_Pin, GPIO_PIN_RESET);
 
   /*Configure GPIO pin Output Level */
   HAL_GPIO_WritePin(seg_4_GPIO_Port, seg_4_Pin, GPIO_PIN_RESET);
-
-  /*Configure GPIO pin Output Level */
-  HAL_GPIO_WritePin(GPIOB, seg_8_Pin|seg_10_Pin|seg_7_Pin, GPIO_PIN_RESET);
-
-  /*Configure GPIO pin : B1_Pin */
-  GPIO_InitStruct.Pin = B1_Pin;
-  GPIO_InitStruct.Mode = GPIO_MODE_IT_FALLING;
-  GPIO_InitStruct.Pull = GPIO_NOPULL;
-  HAL_GPIO_Init(B1_GPIO_Port, &GPIO_InitStruct);
 
   /*Configure GPIO pins : LD2_Pin seg_12_Pin seg_9_Pin */
   GPIO_InitStruct.Pin = LD2_Pin|seg_12_Pin|seg_9_Pin;
@@ -533,6 +565,25 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
   HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
+
+  /*Configure GPIO pin : sw_down_Pin */
+  GPIO_InitStruct.Pin = sw_down_Pin;
+  GPIO_InitStruct.Mode = GPIO_MODE_IT_RISING;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  HAL_GPIO_Init(sw_down_GPIO_Port, &GPIO_InitStruct);
+
+  /*Configure GPIO pins : sw_up_Pin sw_back_Pin */
+  GPIO_InitStruct.Pin = sw_up_Pin|sw_back_Pin;
+  GPIO_InitStruct.Mode = GPIO_MODE_IT_RISING;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
+
+  /*Configure GPIO pin : buz_Pin */
+  GPIO_InitStruct.Pin = buz_Pin;
+  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
+  GPIO_InitStruct.Pull = GPIO_PULLDOWN;
+  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
+  HAL_GPIO_Init(buz_GPIO_Port, &GPIO_InitStruct);
 
   /*Configure GPIO pins : seg_6_Pin seg_5_Pin seg_11_Pin seg_1_Pin
                            seg_3_Pin seg_2_Pin */
@@ -542,6 +593,12 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
   HAL_GPIO_Init(GPIOC, &GPIO_InitStruct);
+
+  /*Configure GPIO pin : sw_ok_Pin */
+  GPIO_InitStruct.Pin = sw_ok_Pin;
+  GPIO_InitStruct.Mode = GPIO_MODE_IT_RISING;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  HAL_GPIO_Init(sw_ok_GPIO_Port, &GPIO_InitStruct);
 
   /*Configure GPIO pin : seg_4_Pin */
   GPIO_InitStruct.Pin = seg_4_Pin;
@@ -556,6 +613,16 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
   HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
+
+  /* EXTI interrupt init*/
+  HAL_NVIC_SetPriority(EXTI4_IRQn, 5, 0);
+  HAL_NVIC_EnableIRQ(EXTI4_IRQn);
+
+  HAL_NVIC_SetPriority(EXTI9_5_IRQn, 5, 0);
+  HAL_NVIC_EnableIRQ(EXTI9_5_IRQn);
+
+  HAL_NVIC_SetPriority(EXTI15_10_IRQn, 5, 0);
+  HAL_NVIC_EnableIRQ(EXTI15_10_IRQn);
 
   /* USER CODE BEGIN MX_GPIO_Init_2 */
 
@@ -598,6 +665,32 @@ void Update_Sensor_Data_SPI(bool _is_overspeed, int _speed){
 	tx_data.is_overspeed = _is_overspeed;
 	tx_data.speed = _speed;
 }
+
+void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
+{
+	static uint32_t last_tick = 0;
+	if (HAL_GetTick() - last_tick < 200) return;
+	last_tick = HAL_GetTick();
+	osMessagePut(buttonQueueHandle, (uint32_t)GPIO_Pin, 0);
+
+    if (GPIO_Pin == sw_ok_Pin)
+    {
+
+    }
+    else if (GPIO_Pin == sw_up_Pin)
+    {
+
+    }
+    else if (GPIO_Pin == sw_down_Pin)
+    {
+
+    }
+    else if (GPIO_Pin == sw_back_Pin)
+    {
+
+    }
+}
+
 
 /* USER CODE END 4 */
 
@@ -691,9 +784,37 @@ void StartFFTTask(void const * argument)
 void StartMenuTask(void const * argument)
 {
   /* USER CODE BEGIN StartMenuTask */
+	lcd_init();
+	lcd_put_cur(0, 0);  // 2. 첫 번째 줄 첫 칸으로 이동
+	lcd_send_string("Hello STM32!"); // 3. 문자열 출력
+
+	lcd_put_cur(1, 0);  // 4. 두 번째 줄로 이동
+	lcd_send_string("I2C LCD Test");
+
+	osEvent event;
   /* Infinite loop */
   for(;;)
   {
+	  // 큐에서 버튼 입력 신호가 올 때까지 대기
+	  event = osMessageGet(buttonQueueHandle, osWaitForever);
+
+	  if (event.status == osEventMessage)
+	  {
+		  // 1. 부저 켜기
+		  HAL_GPIO_WritePin(buz_GPIO_Port, buz_Pin, GPIO_PIN_SET);
+
+		  // 2. 50ms 대기 (RTOS용 딜레이)
+		  osDelay(50);
+
+		  // 3. 부저 끄기
+		  HAL_GPIO_WritePin(buz_GPIO_Port, buz_Pin, GPIO_PIN_RESET);
+
+		  // 추가: 어떤 버튼이 눌렸는지에 따른 처리
+		  uint16_t pin = (uint16_t)event.value.v;
+		  if (pin == sw_ok_Pin) {
+			  // OK 버튼 눌렸을 때 LCD 처리 등
+		  }
+	  }
     osDelay(1);
   }
   /* USER CODE END StartMenuTask */
