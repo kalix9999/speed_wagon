@@ -26,6 +26,7 @@
 #include "arm_math.h"  // DSP 라이브러리 (FFT용)
 #include "fnd.h"
 #include "lcd.h"
+#include "menu.h"
 #include <stdbool.h>
 
 
@@ -40,7 +41,6 @@
 /* USER CODE BEGIN PD */
 #define FFT_LEN 1024       // 512, 1024, 2048 중 선택 (1024 권장)
 #define SAMPLE_RATE 10000  // 10kHz (타이머 설정에 맞춤)
-#define TH_OVERSPEED_km_h 30
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -85,12 +85,15 @@ volatile uint32_t process_offset = 0; // 태스크가 읽어야 할 위치 (0 �
 
 // [SWV 관찰용 전역 변수]
 volatile uint32_t debug_speed = 0;   // 계산된 속도
+volatile uint32_t debug_speed_x10 = 0;
 volatile uint32_t debug_freq = 0;    // 계산된 주파수
 volatile int32_t debug_maxVal = 0;   // 신호 세기 (Magnitude)
 volatile uint32_t debug_isr_cnt = 0; // 인터럽트 횟수 카운터
 volatile q15_t debug_mag = 0; // 푸리에 편환 주파수별 세기 그래프 보기용도
 char debug_buffer[100]; // 디버그 출력
 
+volatile uint32_t TH_OVERSPEED_km_h = 30;
+volatile uint32_t TH_NOISE = 1000;
 // FFT 구조체 인스턴스
 arm_rfft_instance_q15 S;
 
@@ -747,7 +750,7 @@ void StartFFTTask(void const * argument)
 
 		  debug_maxVal = maxVal;
 		  debug_mag = 1<<12;
-		  if (maxVal > 1000) // 노이즈 임계값
+		  if (maxVal > TH_NOISE) // 노이즈 임계값
 		  {
 			  uint32_t freq_hz = (maxIndex * SAMPLE_RATE) / FFT_LEN;
 			  // 속도 = 주파수 / 44 (24.125GHz 기준)
@@ -759,6 +762,7 @@ void StartFFTTask(void const * argument)
 			  printf("Freq: %lu Hz, Speed: %lu.%lu km/h\r\n", freq_hz, speed_x10/10, speed_x10%10);
 			  sprintf(debug_buffer, "Freq: %lu Hz, Speed: %lu.%lu km/h", freq_hz, speed_x10/10, speed_x10%10);
 			  debug_speed = speed_x10/10;
+			  debug_speed_x10 = speed_x10;
 
 			  Update_Sensor_Data_SPI((speed_x10/10)>TH_OVERSPEED_km_h, speed_x10/10);
 		  }
@@ -785,37 +789,62 @@ void StartMenuTask(void const * argument)
 {
   /* USER CODE BEGIN StartMenuTask */
 	lcd_init();
+	menu_init();
+
 	lcd_put_cur(0, 0);  // 2. 첫 번째 줄 첫 칸으로 이동
 	lcd_send_string("Hello STM32!"); // 3. 문자열 출력
 
 	lcd_put_cur(1, 0);  // 4. 두 번째 줄로 이동
 	lcd_send_string("I2C LCD Test");
 
+	UI_State currentState = STATE_DASHBOARD;
+	int currentMenuIdx = 0;
 	osEvent event;
   /* Infinite loop */
   for(;;)
   {
-	  // 큐에서 버튼 입력 신호가 올 때까지 대기
-	  event = osMessageGet(buttonQueueHandle, osWaitForever);
+	  event = osMessageGet(buttonQueueHandle, 100);
 
 	  if (event.status == osEventMessage)
 	  {
-		  // 1. 부저 켜기
 		  HAL_GPIO_WritePin(buz_GPIO_Port, buz_Pin, GPIO_PIN_SET);
-
-		  // 2. 50ms 대기 (RTOS용 딜레이)
-		  osDelay(50);
-
-		  // 3. 부저 끄기
+		  osDelay(100);
 		  HAL_GPIO_WritePin(buz_GPIO_Port, buz_Pin, GPIO_PIN_RESET);
 
-		  // 추가: 어떤 버튼이 눌렸는지에 따른 처리
 		  uint16_t pin = (uint16_t)event.value.v;
-		  if (pin == sw_ok_Pin) {
-			  // OK 버튼 눌렸을 때 LCD 처리 등
+//		  printf("pushed btn pin: %u \r\n", pin);
+		  switch (currentState) {
+			  case STATE_DASHBOARD:
+				  if (pin == sw_ok_Pin) currentState = STATE_MENU_LIST; // OK 누르면 메뉴 진입
+				  break;
+
+			  case STATE_MENU_LIST:
+				  if (pin == sw_up_Pin) currentMenuIdx = (currentMenuIdx + 1) % MENU_COUNT;
+				  else if (pin == sw_down_Pin) currentMenuIdx = (currentMenuIdx + MENU_COUNT - 1) % MENU_COUNT;
+				  else if (pin == sw_ok_Pin) currentState = STATE_SET_VALUE; // 값 설정 진입
+				  else if (pin == sw_back_Pin) currentState = STATE_DASHBOARD; // 뒤로가기
+				  break;
+
+			  case STATE_SET_VALUE:
+				  if (pin == sw_up_Pin){
+					  *(menuItems[currentMenuIdx].target_value) += menuItems[currentMenuIdx].step;
+					  if(*(menuItems[currentMenuIdx].target_value) < menuItems[currentMenuIdx].min)
+						  *(menuItems[currentMenuIdx].target_value) = menuItems[currentMenuIdx].min;
+					  else if(*(menuItems[currentMenuIdx].target_value) > menuItems[currentMenuIdx].max)
+						  *(menuItems[currentMenuIdx].target_value) = menuItems[currentMenuIdx].max;
+				  }
+				  else if (pin == sw_down_Pin){
+					  *(menuItems[currentMenuIdx].target_value) -= menuItems[currentMenuIdx].step;
+					  if(*(menuItems[currentMenuIdx].target_value) < menuItems[currentMenuIdx].min)
+						  *(menuItems[currentMenuIdx].target_value) = menuItems[currentMenuIdx].min;
+					  else if(*(menuItems[currentMenuIdx].target_value) > menuItems[currentMenuIdx].max)
+						  *(menuItems[currentMenuIdx].target_value) = menuItems[currentMenuIdx].max;
+				  }
+				  else if (pin == sw_ok_Pin || pin == sw_back_Pin) currentState = STATE_MENU_LIST; // 저장/취소 후 복귀
+				  break;
 		  }
 	  }
-    osDelay(1);
+	  UpdateLCD(currentState, currentMenuIdx);
   }
   /* USER CODE END StartMenuTask */
 }
