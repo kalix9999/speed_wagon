@@ -12,6 +12,8 @@
 #include <pthread.h>
 
 
+#define PORT 8080
+
 typedef struct __attribute__((packed)){
     int speed;
     bool is_overspeed;
