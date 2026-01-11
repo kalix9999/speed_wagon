@@ -12,7 +12,8 @@ int MENU_COUNT;
 
 MenuItem menuItems[] = {
     {"1.TH OverSpeed", &TH_OVERSPEED_km_h, 5, 100, 5} // 과속 기준값 설정
-    ,{"2.TH_NOISE", &TH_NOISE, 0, 2000, 100} // 노이즈 기준치 값
+    ,{"2.TH_NOISE", &TH_NOISE, 0, 2000, 10} // 노이즈 기준치 값
+    ,{"3.FFT_Max_Value", &debug_maxVal, 0, 5000, 0} // 노이즈 기준치 값
 };
 
 void menu_init(){
