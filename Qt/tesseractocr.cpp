@@ -1,4 +1,5 @@
 #include "tesseractocr.h"
+#include <qdebug.h>
 
 TesseractOCR::TesseractOCR() {
     api = std::make_unique<tesseract::TessBaseAPI>();
@@ -8,38 +9,27 @@ TesseractOCR::~TesseractOCR() {
         api->End();
     }
 }
+
 bool TesseractOCR::init(const char* language) {
-    // 1. 초기화 시 설정할 변수 리스트 준비
-    std::vector<std::string> vars_vec;
-    std::vector<std::string> vars_values;
-
-    // [패턴] 한국 번호판 규격 (00가0000, 000가0000)
-    vars_vec.push_back("user_patterns_str");
-    vars_values.push_back("\\d\\d\\c\\d\\d\\d\\d\n\\d\\d\\d\\c\\d\\d\\d\\d");
-
-    // [화이트리스트] 숫자 및 번호판용 한글만 허용
-    vars_vec.push_back("tessedit_char_whitelist");
-    vars_values.push_back("0123456789"
-                          "가나다라마거너더러머버서어저고노도로모보소오조구누두루무부수우주"
-                          "바사아자배하허호");
-
-    // [사전 비활성화] 무작위 조합 인식을 위해 사전 보정 기능 끔
-    vars_vec.push_back("load_system_dawg");
-    vars_values.push_back("F");
-    vars_vec.push_back("load_freq_dawg");
-    vars_values.push_back("F");
-
-    // 2. Tesseract API 초기화
+    // Tesseract API 초기화
     // 첫 번째 인자는 'tessdata' 폴더가 포함된 상위 경로입니다.
-    const char* datapath = "C:/Program Files/Tesseract-OCR";
-    if (api->Init(datapath, language, tesseract::OEM_DEFAULT,
-                  nullptr, 0, &vars_vec, &vars_values, false)) {
-        fprintf(stderr, "Could not initialize tesseract.\n");
+    const char* datapath = "C:\\Program Files\\Tesseract-OCR\\tessdata";
+    if (api->Init(datapath, language, tesseract::OEM_DEFAULT)) {
+        qDebug() << "Could not initialize tesseract.";
         return false;
     }
 
-    // 3. 페이지 분할 모드 설정 (한 줄 인식)
-    // 이 설정은 초기화(Init) 후에 호출해야 안전하게 적용됩니다.
+    // 화이트리스트 설정
+    api->SetVariable("tessedit_char_whitelist", "0123456789가나다라마거너더러머버서어저고노도로모보소오조구누두루무부수우주바사아자배하허호");
+
+    // 사전 기능 비활성화
+    api->SetVariable("load_system_dawg", "F");
+    api->SetVariable("load_freq_dawg", "F");
+
+    // 패턴 설정 (이 부분이 경고가 난다면 아래 2번 방법을 확인하세요)
+    api->SetVariable("user_patterns_str", "\\d\\d\\c\\d\\d\\d\\d\n\\d\\d\\d\\c\\d\\d\\d\\d");
+
+    // 페이지 분할 모드 설정 (한 줄 인식)
     api->SetPageSegMode(tesseract::PSM_SINGLE_LINE);
 
     return true;
