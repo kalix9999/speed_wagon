@@ -13,6 +13,7 @@
 #include <opencv2/opencv.hpp>
 #include <mosquitto.h>
 #include <softPwm.h>
+#include <endian.h>
 
 #include "protocol.h"
 
@@ -20,6 +21,7 @@
 #define SPI_DEVICE "/dev/spidev0.0"
 #define BUTTON_PIN 0
 #define SERVO_PIN 4 
+
 
 
 pthread_mutex_t g_mutex = PTHREAD_MUTEX_INITIALIZER;
@@ -106,17 +108,17 @@ void* spi_monitor_thread(void* arg)
 void* button_monitor_thread(void* arg)
 {
     pinMode(BUTTON_PIN, INPUT);
-    pullUpDnControl(BUTTON_PIN, PUD_UP);
+    pullUpDnControl(BUTTON_PIN, PUD_DOWN);
 
     while (keep_running) {
-        if (digitalRead(BUTTON_PIN) == HIGH) {
+        if (digitalRead(BUTTON_PIN) == 1) {
             pthread_mutex_lock(&g_mutex);
             trigger_button = 1;
             pthread_cond_signal(&g_cond);
             pthread_mutex_unlock(&g_mutex);
 
             printf(">>> 버튼 눌림\n");
-            delay(500);
+            delay(100);
         }
         delay(50);
     }
@@ -126,7 +128,8 @@ void* button_monitor_thread(void* arg)
 void* camera_worker(void* arg)
 {
     int sock = *(int*)arg;
-    cv::VideoCapture cap(0);
+    std::string pipeline = "libcamerasrc ! videoconvert ! videoscale ! video/x-raw, width=1280, height=720, format=BGR ! appsink drop=true max-buffers=2 sync=false";
+    cv::VideoCapture cap(pipeline, cv::CAP_GSTREAMER);
     if (!cap.isOpened()) return NULL;
 
     
@@ -136,6 +139,7 @@ void* camera_worker(void* arg)
     std::vector<int> params = {cv::IMWRITE_JPEG_QUALITY, 70};
 
     while (keep_running) {
+        PacketHeader header;
         pthread_mutex_lock(&g_mutex);
         while (!trigger_button && !trigger_overspeed && keep_running)
             pthread_cond_wait(&g_cond, &g_mutex);
@@ -167,9 +171,20 @@ void* camera_worker(void* arg)
 
         cv::resize(frame, frame, cv::Size(640,480));
         cv::imencode(".jpg", frame, buffer, params);
+        uint32_t sum = 0;
+        for(int i = 0; i<buffer.size();i++){
+            sum+= buffer[i];
+        }
+        header.speed = htonl(speed);
+        header.start = htonl(0x12345);
+        header.img_size = htonl(buffer.size());
+        header.time = htobe64((uint64_t)time(NULL));
+        header.checksum = htonl(sum);
 
-        int len = htonl(buffer.size());
-        if (write(sock, &len, sizeof(len)) <= 0) break;
+        
+`
+       
+        if (write(sock, &header, sizeof(PacketHeader)) <= 0) break;
         if (write(sock, buffer.data(), buffer.size()) <= 0) break;
     }
     close(sock);

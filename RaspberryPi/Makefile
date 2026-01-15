@@ -7,7 +7,10 @@ CXXFLAGS = -Wall -O2 $(shell pkg-config --cflags opencv4)
 LDFLAGS = $(shell pkg-config --libs opencv4) -lmosquitto -lwiringPi -lpthread
 
 
-all: $(TARGET)
+all: $(TARGET) cam
+
+cam:
+	$(CC) -o $@ cam.cpp $(CXXFLAGS) $(LDFLAGS)
 
 $(TARGET) : $(OBJS)
 	$(CC) -o  $@ $^ $(CXXFLAGS) $(LDFLAGS)
@@ -18,5 +21,5 @@ $(TARGET) : $(OBJS)
 
 
 clean:
-	rm -rf $(TARGET) $(OBJS)
+	rm -rf $(TARGET) $(OBJS) cam *.jpg
 

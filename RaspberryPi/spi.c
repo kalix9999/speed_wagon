@@ -18,7 +18,7 @@ int main() {
 
 
     spi_fd = open(device, O_RDWR);
-    if (fd < 0) {
+    if (spi_fd < 0) {
         perror("SPI 장치 열기 실패");
         return -1;
     }
