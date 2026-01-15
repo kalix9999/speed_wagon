@@ -17,20 +17,20 @@
    <widget class="QLabel" name="label_image">
     <property name="geometry">
      <rect>
-      <x>30</x>
-      <y>30</y>
-      <width>740</width>
-      <height>400</height>
+      <x>50</x>
+      <y>80</y>
+      <width>691</width>
+      <height>351</height>
      </rect>
     </property>
     <property name="frameShape">
-     <enum>QFrame::Box</enum>
+     <enum>QFrame::Shape::Box</enum>
     </property>
     <property name="text">
      <string>사진 대기 중...</string>
     </property>
     <property name="alignment">
-     <set>Qt::AlignCenter</set>
+     <set>Qt::AlignmentFlag::AlignCenter</set>
     </property>
    </widget>
    <widget class="QTextBrowser" name="textBrowser">
@@ -41,6 +41,32 @@
       <width>740</width>
       <height>120</height>
      </rect>
+    </property>
+   </widget>
+   <widget class="QLabel" name="connect_state">
+    <property name="geometry">
+     <rect>
+      <x>591</x>
+      <y>60</y>
+      <width>151</width>
+      <height>20</height>
+     </rect>
+    </property>
+    <property name="text">
+     <string>TextLabel</string>
+    </property>
+   </widget>
+   <widget class="QLabel" name="img_label">
+    <property name="geometry">
+     <rect>
+      <x>10</x>
+      <y>30</y>
+      <width>191</width>
+      <height>41</height>
+     </rect>
+    </property>
+    <property name="text">
+     <string>TextLabel</string>
     </property>
    </widget>
   </widget>

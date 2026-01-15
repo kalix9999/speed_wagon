@@ -9,9 +9,13 @@ Client::Client(QWidget *parent) :
 {
     ui->setupUi(this);
 
+    QPixmap pixmap("C:/Users/1-17/Desktop/5407a0a8d4960.png");   // 또는 파일 경로
+    ui->img_label->setPixmap(
+        pixmap.scaled(ui->img_label->size(),Qt::KeepAspectRatioByExpanding));
+
     socket = new QTcpSocket(this);
     connect(socket, &QTcpSocket::readyRead, this, &Client::onReadyRead);
-    connectToHost("192.168.0.23");
+    connectToHost("192.168.0.12");
 
     this->setFocusPolicy(Qt::StrongFocus);
 
@@ -25,40 +29,72 @@ Client::~Client()
     delete ui;
 }
 
+//TCP 연결 함수
 void Client::connectToHost(QString host)
 {
     socket->connectToHost(host, 8080);
     if(socket->waitForConnected(3000)) {
-        ui->textBrowser->append("서버 연결 성공!");
+        ui->connect_state->QLabel::setText("서버 연결 성공!");
     } else {
-        ui->textBrowser->append("연결 실패...");
+        ui->connect_state->QLabel::setText("연결 실패...");
     }
 }
 
+//연결 후 함수
 void Client::onReadyRead()
 {
-
+    PacketHeader temp;
     buffer.append(socket->readAll());
     while (true)
     {
-        if (imageSize == 0)
+        if(buffer.size()<sizeof(PacketHeader)) {
+            qDebug()<<"아직 헤더 안옴";
+            return;
+        }
+        memcpy(&temp, buffer.constData(), sizeof(PacketHeader));
+
+        header.speed = ntohl(temp.speed);
+        header.checksum = ntohl(temp.checksum);
+        header.img_size = temp.img_size;
+        header.start = ntohl(temp.start);
+
+        if(header.start != 0x12345) {
+            qDebug()<<"시작 다름";
+            return;
+        }
+
+        if(buffer.size() < sizeof(PacketHeader)+header.img_size)
         {
-            if (buffer.size() < 4) return;
-            QDataStream stream(buffer);
-            stream >> imageSize;
-            buffer.remove(0, 4);
+             qDebug()<<"아직 사진 안옴";
+            qDebug()<<header.img_size;
+            return;
         }
-        if (buffer.size() < imageSize) return;
+        buffer.remove(0,sizeof(PacketHeader));
 
-        QByteArray imageData = buffer.mid(0, imageSize);
-        buffer.remove(0, imageSize);
-        imageSize = 0;
+        QByteArray img = buffer.mid(0,header.img_size);
+        buffer.remove(0, header.img_size);
 
+        uint32_t temp_chk = 0;
+        for(int i = 0; i<img.size(); i++){
+            temp_chk += static_cast<unsigned char>(img[i]);
+        }
+
+        if(temp_chk != header.checksum){
+            qDebug()<<"사진 다름";
+            return;
+        }
+        QDateTime t = QDateTime::currentDateTime();
+        QString dateStr = t.toString("yyyy-MM-dd-hh-mm-ss");
         QPixmap pixmap;
-        if (pixmap.loadFromData(imageData)) {
+        if (pixmap.loadFromData(img)) {
             ui->label_image->setPixmap(pixmap.scaled(ui->label_image->size(), Qt::KeepAspectRatio));
-
+            ui->textBrowser->setText(
+                "=================\n"
+                "속도:" + QString::number(header.speed)+"\n" +
+                "시간" + dateStr + "\n"
+                );
         }
+
     }
 }
 

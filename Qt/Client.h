@@ -7,6 +7,21 @@
 #include <QKeyEvent>
 #include <QTimer>
 #include <QProcess>
+#include <winsock2.h>
+#include <ws2tcpip.h>
+#include <windows.h>
+
+
+#pragma pack(push, 1)
+typedef struct{
+    uint32_t start;
+    uint32_t img_size;
+    uint32_t speed;
+    uint64_t time;
+    uint32_t checksum;
+}PacketHeader;
+
+#pragma pack(pop)
 
 namespace Ui {
 class Client;
@@ -35,7 +50,7 @@ private:
     Ui::Client *ui;
     QTcpSocket *socket;
     QByteArray buffer;
-    qint32 imageSize = 0;
+    PacketHeader header;
 
     QTimer *timer;
     int current_angle = 90;
