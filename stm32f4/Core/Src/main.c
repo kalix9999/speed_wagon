@@ -40,7 +40,7 @@
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
-#define FFT_LEN 512       // 128, 256, 512, 1024, 2048 중 선택 (1024 권장)
+#define FFT_LEN 1024       // 128, 256, 512, 1024, 2048 중 선택 (1024 권장)
 #define SAMPLE_RATE 10000  // 10kHz (타이머 설정에 맞춤)
 /* USER CODE END PD */
 
@@ -99,7 +99,7 @@ char debug_buffer[100]; // 디버그 출력
 volatile uint32_t TH_OVERSPEED_km_h = 30;
 volatile uint32_t TH_NOISE = 500;
 
-#define ACC_FRAMES 3 // 누적 (너무 많이하면 반응 느려짐)
+#define ACC_FRAMES 10 // 누적 (너무 많이하면 반응 느려짐)
 int32_t fft_accumulated[FFT_LEN] = {0}; // 누적용 버퍼
 int acc_count = 0;
 
@@ -745,27 +745,29 @@ void StartFFTTask(void const * argument)
 		  // 평균 구하기 (DC 오프셋)
 		  for (int i = 0; i < FFT_LEN; i++) {
 			  sum += adc_buffer[process_offset + i];
-//			  debug_adc_raw = adc_buffer[process_offset + i]; // 디버깅용
+			  debug_adc_raw = adc_buffer[process_offset + i]; // 디버깅용
 		  }
 		  uint32_t dc_offset = sum / FFT_LEN; // 약 2000
-		  printf("dc_offset: %lu \r\n", dc_offset);
+//		  printf("dc_offset: %lu \r\n", dc_offset);
 
 		  // FFT 입력 버퍼로 복사
-//		  for (int i = 0; i < FFT_LEN; i++) {
-//			  int16_t val = (int16_t)adc_buffer[process_offset + i] - dc_offset;
-//			  fft_input_q15[i] = (q15_t)(val << 3); // 값 증폭 (필요시 조정)
-//		  }
-		  // 해밍윈도우 추가
 		  for (int i = 0; i < FFT_LEN; i++) {
-				int16_t val = (int16_t)adc_buffer[process_offset + i] - dc_offset;
-
-				// [중요] 값을 증폭(<<3)하기 전에 Window 함수를 곱해줍니다.
-				// Q15 곱셈: (Signal * Window) >> 15
-				int32_t windowed_val = ((int32_t)val * hanning_window[i]) >> 15;  //hanning_window: 0~32000==2^15
-
-				// 그 후 증폭 (입력이 작다면)
-				fft_input_q15[i] = (q15_t)(windowed_val << 3);
-			}
+			  int16_t val = (int16_t)adc_buffer[process_offset + i] - dc_offset;
+			  fft_input_q15[i] = (q15_t)(val); // 값 증폭 (필요시 조정)
+//			  fft_input_q15[i] = (q15_t)(val << 3); // 값 증폭 (필요시 조정)
+		  }
+		  // 해밍윈도우 추가
+//		  for (int i = 0; i < FFT_LEN; i++) {
+//				int16_t val = (int16_t)adc_buffer[process_offset + i] - dc_offset;
+//
+//				// [중요] 값을 증폭(<<3)하기 전에 Window 함수를 곱해줍니다.
+//				// Q15 곱셈: (Signal * Window) >> 15
+//				int32_t windowed_val = ((int32_t)val * hanning_window[i]) >> 15;  //hanning_window: 0~32000==2^15
+//
+//				// 그 후 증폭 (입력이 작다면)
+////				fft_input_q15[i] = (q15_t)(windowed_val << 3);
+//				fft_input_q15[i] = (q15_t)(windowed_val);
+//			}
 
 		  // [A] FFT 계산 및 속도 출력
 		  arm_rfft_q15(&S, fft_input_q15, fft_output_q15);
@@ -790,7 +792,7 @@ void StartFFTTask(void const * argument)
 		  // Peak 찾기 및 출력 로직
 		  uint32_t maxVal = 0;
 		  uint32_t maxIndex = 0;
-		  int start_index = 6; // 저주파 노이즈 제거
+		  int start_index = 1; // 저주파 노이즈 제거
 //		  arm_max_q15(&fft_mag_q15[start_index], (FFT_LEN / 2) - start_index, &maxVal, &maxIndex);
 
 //		  arm_max_q15(&fft_accumulated[start_index], (FFT_LEN / 2) - start_index, &maxVal, &maxIndex);
@@ -799,7 +801,7 @@ void StartFFTTask(void const * argument)
 		  for (int i = start_index; i < FFT_LEN / 2; i++)
 		  {
 			  uint32_t avg_val = fft_accumulated[i] / ACC_FRAMES;
-			  if(850 < avg_val && avg_val <950) continue; // 왜인지 모르겠지만 이구간에서 노이즈가 항상있음
+//			  if(850 < avg_val && avg_val <950) continue; // 왜인지 모르겠지만 이구간에서 노이즈가 항상있음
 		      if (avg_val > maxVal)
 		      {
 		          maxVal = avg_val;
@@ -818,8 +820,8 @@ void StartFFTTask(void const * argument)
 			  //세그먼트 출력
 			  FND_SetNumber(speed_x10);
 
-			  printf("Freq: %lu Hz, Speed: %lu.%lu km/h\r\n", freq_hz, speed_x10/10, speed_x10%10);
-			  sprintf(debug_buffer, "Freq: %lu Hz, Speed: %lu.%lu km/h", freq_hz, speed_x10/10, speed_x10%10);
+//			  printf("Freq: %lu Hz, Speed: %lu.%lu km/h\r\n", freq_hz, speed_x10/10, speed_x10%10);
+//			  sprintf(debug_buffer, "Freq: %lu Hz, Speed: %lu.%lu km/h", freq_hz, speed_x10/10, speed_x10%10);
 			  debug_speed = speed_x10/10;
 			  debug_speed_x10 = speed_x10;
 
