@@ -28,6 +28,7 @@
 #include "lcd.h"
 #include "menu.h"
 #include <stdbool.h>
+#include <math.h> // 해밍윈도우 M_PI 사용을 위해 추가
 
 
 /* USER CODE END Includes */
@@ -39,7 +40,7 @@
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
-#define FFT_LEN 1024       // 512, 1024, 2048 중 선택 (1024 권장)
+#define FFT_LEN 1024       // 128, 256, 512, 1024, 2048 중 선택 (1024 권장)
 #define SAMPLE_RATE 10000  // 10kHz (타이머 설정에 맞춤)
 /* USER CODE END PD */
 
@@ -90,10 +91,19 @@ volatile uint32_t debug_freq = 0;    // 계산된 주파수
 volatile int32_t debug_maxVal = 0;   // 신호 세기 (Magnitude)
 volatile uint32_t debug_isr_cnt = 0; // 인터럽트 횟수 카운터
 volatile q15_t debug_mag = 0; // 푸리에 편환 주파수별 세기 그래프 보기용도
+volatile uint32_t debug_adc_raw = 0;
+volatile uint32_t debug_accumulated = 0; // SNR 누적 확인용
+volatile uint32_t debug_fft_mag = 0;
 char debug_buffer[100]; // 디버그 출력
 
 volatile uint32_t TH_OVERSPEED_km_h = 30;
-volatile uint32_t TH_NOISE = 1000;
+volatile uint32_t TH_NOISE = 30;
+
+#define ACC_FRAMES 3 // 누적 (너무 많이하면 반응 느려짐)
+int32_t fft_accumulated[FFT_LEN] = {0}; // 누적용 버퍼
+int acc_count = 0;
+
+q15_t hanning_window[FFT_LEN]; // 해밍윈도우 0~32,000
 // FFT 구조체 인스턴스
 arm_rfft_instance_q15 S;
 
@@ -140,7 +150,8 @@ int main(void)
   /* MCU Configuration--------------------------------------------------------*/
 
   /* Reset of all peripherals, Initializes the Flash interface and the Systick. */
-  HAL_Init();
+
+	HAL_Init();
 
   /* USER CODE BEGIN Init */
 
@@ -165,6 +176,12 @@ int main(void)
   /* USER CODE BEGIN 2 */
   FND_Init();
   HAL_TIM_Base_Start_IT(&htim2);
+  for (int i = 0; i < FFT_LEN; i++) {
+      // 0.5 * (1 - cos(2*pi*n / (N-1))) 공식을 Q15 포맷으로 변환
+      // 32767은 Q15의 1.0에 해당
+      float32_t val = 0.5f * (1.0f - cosf(2.0f * 3.141592f * (float)i / (float)(FFT_LEN - 1)));
+      hanning_window[i] = (q15_t)(val * 32767.0f);
+  }
   /* USER CODE END 2 */
 
   /* USER CODE BEGIN RTOS_MUTEX */
@@ -309,7 +326,7 @@ static void MX_ADC1_Init(void)
   */
   sConfig.Channel = ADC_CHANNEL_0;
   sConfig.Rank = 1;
-  sConfig.SamplingTime = ADC_SAMPLETIME_3CYCLES;
+  sConfig.SamplingTime = ADC_SAMPLETIME_480CYCLES;
   if (HAL_ADC_ConfigChannel(&hadc1, &sConfig) != HAL_OK)
   {
     Error_Handler();
@@ -728,39 +745,88 @@ void StartFFTTask(void const * argument)
 		  // 평균 구하기 (DC 오프셋)
 		  for (int i = 0; i < FFT_LEN; i++) {
 			  sum += adc_buffer[process_offset + i];
+			  debug_adc_raw = adc_buffer[process_offset + i]; // 디버깅용
 		  }
-		  int16_t dc_offset = sum / FFT_LEN;
+		  uint32_t dc_offset = sum / FFT_LEN; // 약 2000
+//		  printf("dc_offset: %lu \r\n", dc_offset);
+
 
 		  // FFT 입력 버퍼로 복사
+//		  for (int i = 0; i < FFT_LEN; i++) {
+//			  int16_t val = (int16_t)adc_buffer[process_offset + i] - dc_offset;
+//			  fft_input_q15[i] = (q15_t)(val); // 값 증폭 (필요시 조정)
+////			  fft_input_q15[i] = (q15_t)(val << 3); // 값 증폭 (필요시 조정)
+//		  }
+		  // 해밍윈도우 추가
 		  for (int i = 0; i < FFT_LEN; i++) {
-			  int16_t val = (int16_t)adc_buffer[process_offset + i] - dc_offset;
-			  fft_input_q15[i] = (q15_t)(val << 3); // 값 증폭 (필요시 조정)
-		  }
+				int16_t val = (int16_t)adc_buffer[process_offset + i] - dc_offset;
+
+				// [중요] 값을 증폭(<<3)하기 전에 Window 함수를 곱해줍니다.
+				// Q15 곱셈: (Signal * Window) >> 15
+				int32_t windowed_val = ((int32_t)val * hanning_window[i]) >> 15;  //hanning_window: 0~32000==2^15
+
+				// 그 후 증폭 (입력이 작다면)
+				fft_input_q15[i] = (q15_t)(windowed_val << 3);
+//				fft_input_q15[i] = (q15_t)(windowed_val);
+			}
 
 		  // [A] FFT 계산 및 속도 출력
 		  arm_rfft_q15(&S, fft_input_q15, fft_output_q15);
 		  arm_cmplx_mag_q15(fft_output_q15, fft_mag_q15, FFT_LEN);
 
+
+		  // [누적 로직 추가]
+		  for(int i = 0; i < FFT_LEN; i++) {
+			  if(24 <= i && i <= 27 || 50<=i && i<=53 || i==77) continue; // 왜인지 모르겠지만 5.5km/h~5.7km/h 구간 노이즈가 항상있어서 제외함
+
+			  if(acc_count == 0) fft_accumulated[i] = (int32_t)fft_mag_q15[i];
+			  else fft_accumulated[i] += (int32_t)fft_mag_q15[i]; // 값 더하기
+
+			  debug_fft_mag = fft_mag_q15[i];
+			  if(acc_count == ACC_FRAMES-1) {
+				  debug_accumulated = fft_accumulated[i] / ACC_FRAMES;
+			  }
+		  }
+		  acc_count++;
+		  if (acc_count < ACC_FRAMES) continue;
+		  acc_count = 0;
+
+
 		  // Peak 찾기 및 출력 로직
-		  q15_t maxVal;
-		  uint32_t maxIndex;
+		  uint32_t maxVal = 0;
+		  uint32_t maxIndex = 0;
 		  int start_index = 1; // 저주파 노이즈 제거
-		  arm_max_q15(&fft_mag_q15[start_index], (FFT_LEN / 2) - start_index, &maxVal, &maxIndex);
-		  maxIndex += start_index;
+//		  arm_max_q15(&fft_mag_q15[start_index], (FFT_LEN / 2) - start_index, &maxVal, &maxIndex);
+
+//		  arm_max_q15(&fft_accumulated[start_index], (FFT_LEN / 2) - start_index, &maxVal, &maxIndex);
+//		  maxIndex += start_index;
+
+		  for (int i = start_index; i < FFT_LEN / 2; i++)
+		  {
+			  uint32_t avg_val = fft_accumulated[i] / ACC_FRAMES;
+//			  if(170 < avg_val && avg_val < 190) continue; // 왜인지 모르겠지만 5.5km/h~5.7km/h 구간 노이즈가 항상있어서 제외함
+		      if (avg_val > maxVal)
+		      {
+		          maxVal = avg_val;
+		          maxIndex = i;
+		      }
+		  }
 
 		  debug_maxVal = maxVal;
-		  debug_mag = 1<<12;
+		  printf("maxVal: %lu,  maxIndex : %lu  \r\n", maxVal, maxIndex);
+//		  debug_mag = 1<<12;
 		  if (maxVal > TH_NOISE) // 노이즈 임계값
 		  {
+			  printf("maxVal: %lu , TH_NOISE: %lu \r\n", maxVal, TH_NOISE);
 			  uint32_t freq_hz = (maxIndex * SAMPLE_RATE) / FFT_LEN;
 			  // 속도 = 주파수 / 44 (24.125GHz 기준)
 			  uint32_t speed_x10 = (freq_hz * 10) / 44;
 
-			  //세그먼트 출력
+			  // 세그먼트 출력
 			  FND_SetNumber(speed_x10);
 
 			  printf("Freq: %lu Hz, Speed: %lu.%lu km/h\r\n", freq_hz, speed_x10/10, speed_x10%10);
-			  sprintf(debug_buffer, "Freq: %lu Hz, Speed: %lu.%lu km/h", freq_hz, speed_x10/10, speed_x10%10);
+//			  sprintf(debug_buffer, "Freq: %lu Hz, Speed: %lu.%lu km/h", freq_hz, speed_x10/10, speed_x10%10);
 			  debug_speed = speed_x10/10;
 			  debug_speed_x10 = speed_x10;
 

@@ -37,6 +37,7 @@ extern volatile q15_t debug_mag; // 푸리에 편환 주파수별 세기 그래�
 
 extern volatile uint32_t TH_OVERSPEED_km_h;
 extern volatile uint32_t TH_NOISE;
+extern volatile int32_t debug_maxVal;
 
 extern int MENU_COUNT;
 
