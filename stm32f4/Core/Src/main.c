@@ -97,9 +97,9 @@ volatile uint32_t debug_fft_mag = 0;
 char debug_buffer[100]; // 디버그 출력
 
 volatile uint32_t TH_OVERSPEED_km_h = 30;
-volatile uint32_t TH_NOISE = 500;
+volatile uint32_t TH_NOISE = 30;
 
-#define ACC_FRAMES 10 // 누적 (너무 많이하면 반응 느려짐)
+#define ACC_FRAMES 3 // 누적 (너무 많이하면 반응 느려짐)
 int32_t fft_accumulated[FFT_LEN] = {0}; // 누적용 버퍼
 int acc_count = 0;
 
@@ -750,24 +750,25 @@ void StartFFTTask(void const * argument)
 		  uint32_t dc_offset = sum / FFT_LEN; // 약 2000
 //		  printf("dc_offset: %lu \r\n", dc_offset);
 
+
 		  // FFT 입력 버퍼로 복사
-		  for (int i = 0; i < FFT_LEN; i++) {
-			  int16_t val = (int16_t)adc_buffer[process_offset + i] - dc_offset;
-			  fft_input_q15[i] = (q15_t)(val); // 값 증폭 (필요시 조정)
-//			  fft_input_q15[i] = (q15_t)(val << 3); // 값 증폭 (필요시 조정)
-		  }
-		  // 해밍윈도우 추가
 //		  for (int i = 0; i < FFT_LEN; i++) {
-//				int16_t val = (int16_t)adc_buffer[process_offset + i] - dc_offset;
-//
-//				// [중요] 값을 증폭(<<3)하기 전에 Window 함수를 곱해줍니다.
-//				// Q15 곱셈: (Signal * Window) >> 15
-//				int32_t windowed_val = ((int32_t)val * hanning_window[i]) >> 15;  //hanning_window: 0~32000==2^15
-//
-//				// 그 후 증폭 (입력이 작다면)
-////				fft_input_q15[i] = (q15_t)(windowed_val << 3);
+//			  int16_t val = (int16_t)adc_buffer[process_offset + i] - dc_offset;
+//			  fft_input_q15[i] = (q15_t)(val); // 값 증폭 (필요시 조정)
+////			  fft_input_q15[i] = (q15_t)(val << 3); // 값 증폭 (필요시 조정)
+//		  }
+		  // 해밍윈도우 추가
+		  for (int i = 0; i < FFT_LEN; i++) {
+				int16_t val = (int16_t)adc_buffer[process_offset + i] - dc_offset;
+
+				// [중요] 값을 증폭(<<3)하기 전에 Window 함수를 곱해줍니다.
+				// Q15 곱셈: (Signal * Window) >> 15
+				int32_t windowed_val = ((int32_t)val * hanning_window[i]) >> 15;  //hanning_window: 0~32000==2^15
+
+				// 그 후 증폭 (입력이 작다면)
+				fft_input_q15[i] = (q15_t)(windowed_val << 3);
 //				fft_input_q15[i] = (q15_t)(windowed_val);
-//			}
+			}
 
 		  // [A] FFT 계산 및 속도 출력
 		  arm_rfft_q15(&S, fft_input_q15, fft_output_q15);
@@ -776,6 +777,8 @@ void StartFFTTask(void const * argument)
 
 		  // [누적 로직 추가]
 		  for(int i = 0; i < FFT_LEN; i++) {
+			  if(24 <= i && i <= 27 || 50<=i && i<=53 || i==77) continue; // 왜인지 모르겠지만 5.5km/h~5.7km/h 구간 노이즈가 항상있어서 제외함
+
 			  if(acc_count == 0) fft_accumulated[i] = (int32_t)fft_mag_q15[i];
 			  else fft_accumulated[i] += (int32_t)fft_mag_q15[i]; // 값 더하기
 
@@ -801,26 +804,28 @@ void StartFFTTask(void const * argument)
 		  for (int i = start_index; i < FFT_LEN / 2; i++)
 		  {
 			  uint32_t avg_val = fft_accumulated[i] / ACC_FRAMES;
-//			  if(850 < avg_val && avg_val <950) continue; // 왜인지 모르겠지만 이구간에서 노이즈가 항상있음
+//			  if(170 < avg_val && avg_val < 190) continue; // 왜인지 모르겠지만 5.5km/h~5.7km/h 구간 노이즈가 항상있어서 제외함
 		      if (avg_val > maxVal)
 		      {
 		          maxVal = avg_val;
-		          maxIndex = i; // 여기서 'i'는 이미 start_index가 포함된 진짜 위치입니다.
+		          maxIndex = i;
 		      }
 		  }
 
 		  debug_maxVal = maxVal;
+		  printf("maxVal: %lu,  maxIndex : %lu  \r\n", maxVal, maxIndex);
 //		  debug_mag = 1<<12;
 		  if (maxVal > TH_NOISE) // 노이즈 임계값
 		  {
+			  printf("maxVal: %lu , TH_NOISE: %lu \r\n", maxVal, TH_NOISE);
 			  uint32_t freq_hz = (maxIndex * SAMPLE_RATE) / FFT_LEN;
 			  // 속도 = 주파수 / 44 (24.125GHz 기준)
 			  uint32_t speed_x10 = (freq_hz * 10) / 44;
 
-			  //세그먼트 출력
+			  // 세그먼트 출력
 			  FND_SetNumber(speed_x10);
 
-//			  printf("Freq: %lu Hz, Speed: %lu.%lu km/h\r\n", freq_hz, speed_x10/10, speed_x10%10);
+			  printf("Freq: %lu Hz, Speed: %lu.%lu km/h\r\n", freq_hz, speed_x10/10, speed_x10%10);
 //			  sprintf(debug_buffer, "Freq: %lu Hz, Speed: %lu.%lu km/h", freq_hz, speed_x10/10, speed_x10%10);
 			  debug_speed = speed_x10/10;
 			  debug_speed_x10 = speed_x10;
