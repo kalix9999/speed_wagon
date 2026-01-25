@@ -38,6 +38,8 @@ extern volatile q15_t debug_mag; // 푸리에 편환 주파수별 세기 그래�
 extern volatile uint32_t TH_OVERSPEED_km_h;
 extern volatile uint32_t TH_NOISE;
 extern volatile int32_t debug_maxVal;
+extern volatile uint32_t noise_search_trigger; // 0: 대기, 1: 측정중, 2: 완료
+extern uint8_t noise_bin_mask[]; // 0: 정상, 1: 노이즈 주파수로 마스킹됨
 
 extern int MENU_COUNT;
 

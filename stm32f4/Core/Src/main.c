@@ -84,6 +84,17 @@ q15_t fft_output_q15[FFT_LEN * 2];
 q15_t fft_mag_q15[FFT_LEN];      // 최종 크기(Magnitude) 결과
 volatile uint32_t process_offset = 0; // 태스크가 읽어야 할 위치 (0 또는 1024)
 
+// 노이즈 마스킹용
+int search_frame_count = 0;
+volatile uint32_t noise_search_trigger = 0;
+const int NOISE_SEARCH_LIMIT = 50;
+uint8_t noise_bin_mask[FFT_LEN] = {0};
+
+// FND
+uint32_t held_speed_x10 = 0; // 세그먼트 출력용 (일정시간 유지)
+uint32_t last_peak_tick = 0;
+const uint32_t HOLD_TIME_MS = 1000; // 1초 동안 최고값 유지
+
 // [SWV 관찰용 전역 변수]
 volatile uint32_t debug_speed = 0;   // 계산된 속도
 volatile uint32_t debug_speed_x10 = 0;
@@ -737,7 +748,7 @@ void StartFFTTask(void const * argument)
 	  // [B] 신호 대기 (인터럽트가 깨울 때까지 잠듦) 💤
 	  if (osSemaphoreWait(adcBinarySemHandle, osWaitForever) == osOK)
 	  {
-		  // [C] 데이터 복사 (Ping-Pong 로직) 🏓
+		  // [C] 데이터 복사 (Ping-Pong 로직)
 		  // process_offset 변수가 가리키는 곳(0 또는 1024)에서 데이터를 가져옵니다.
 
 		  // DC 제거 및 Q15 변환
@@ -749,7 +760,6 @@ void StartFFTTask(void const * argument)
 		  }
 		  uint32_t dc_offset = sum / FFT_LEN; // 약 2000
 //		  printf("dc_offset: %lu \r\n", dc_offset);
-
 
 		  // FFT 입력 버퍼로 복사
 //		  for (int i = 0; i < FFT_LEN; i++) {
@@ -774,15 +784,37 @@ void StartFFTTask(void const * argument)
 		  arm_rfft_q15(&S, fft_input_q15, fft_output_q15);
 		  arm_cmplx_mag_q15(fft_output_q15, fft_mag_q15, FFT_LEN);
 
+		  // noise 마스킹 탐색 코드 추가
+		  if (noise_search_trigger == 1) {
+			  for (int i = 0; i < FFT_LEN / 2; i++) {
+				  if (fft_mag_q15[i] > TH_NOISE) {
+					  noise_bin_mask[i] = 1;
+				  }
+			  }
+			  search_frame_count++;
+			  if (search_frame_count >= NOISE_SEARCH_LIMIT) {
+				  noise_search_trigger = 2; // 완료
+				  printf("noise searching list : \r\n");
+				  for(int i = 0; i<FFT_LEN; i++){
+					  if(noise_bin_mask[i]) printf("%d, ", i);
+				  }
+				  search_frame_count = 0;
+			  }
+			  continue;
+		  }
 
-		  // [누적 로직 추가]
+		  // [SNR 누적 로직]
 		  for(int i = 0; i < FFT_LEN; i++) {
-			  if(24 <= i && i <= 27 || 50<=i && i<=53 || i==77) continue; // 왜인지 모르겠지만 5.5km/h~5.7km/h 구간 노이즈가 항상있어서 제외함
+			  debug_fft_mag = fft_mag_q15[i];
+
+			  if (noise_bin_mask[i]) { // 의문의 노이즈 삭제
+				  fft_accumulated[i] = 0; // 차단된 주파수는 누적값도 초기화
+				  continue;
+			  }
 
 			  if(acc_count == 0) fft_accumulated[i] = (int32_t)fft_mag_q15[i];
 			  else fft_accumulated[i] += (int32_t)fft_mag_q15[i]; // 값 더하기
 
-			  debug_fft_mag = fft_mag_q15[i];
 			  if(acc_count == ACC_FRAMES-1) {
 				  debug_accumulated = fft_accumulated[i] / ACC_FRAMES;
 			  }
@@ -791,16 +823,18 @@ void StartFFTTask(void const * argument)
 		  if (acc_count < ACC_FRAMES) continue;
 		  acc_count = 0;
 
-
-		  // Peak 찾기 및 출력 로직
+		  // [Peak 찾기 로직]
 		  uint32_t maxVal = 0;
 		  uint32_t maxIndex = 0;
 		  int start_index = 1; // 저주파 노이즈 제거
+		  // 방법1 DSP 라이브러리의 함수활용하여 최대 찾기
 //		  arm_max_q15(&fft_mag_q15[start_index], (FFT_LEN / 2) - start_index, &maxVal, &maxIndex);
 
+		  // 방법2 누적 배열을 적용
 //		  arm_max_q15(&fft_accumulated[start_index], (FFT_LEN / 2) - start_index, &maxVal, &maxIndex);
 //		  maxIndex += start_index;
 
+		  // 방법3 누적배열 중 진폭이 가장 큰 물체 찾기
 		  for (int i = start_index; i < FFT_LEN / 2; i++)
 		  {
 			  uint32_t avg_val = fft_accumulated[i] / ACC_FRAMES;
@@ -812,32 +846,48 @@ void StartFFTTask(void const * argument)
 		      }
 		  }
 
+//		  // 방법 4 누적배열 중 속도가 가장 빠른 물체 찾기
+//		  for (int i = (FFT_LEN / 2) - 1; i >= start_index; i--) {
+//			  uint32_t avg_val = fft_accumulated[i] / ACC_FRAMES;
+//		      if (avg_val > TH_NOISE) {
+//		    	  maxVal = avg_val;
+//		    	  maxIndex = i;
+//		          break; // 임계값을 넘는 가장 높은 주파수를 찾으면 즉시 중단 (가장 빠른 속도)
+//		      }
+//		  }
+
+
+		  // [ 결과 출력 로직 ]
 		  debug_maxVal = maxVal;
-		  printf("maxVal: %lu,  maxIndex : %lu  \r\n", maxVal, maxIndex);
+//		  printf("maxVal: %lu,  maxIndex : %lu  \r\n", maxVal, maxIndex);
 //		  debug_mag = 1<<12;
+		  uint32_t speed_x10 = 0;
 		  if (maxVal > TH_NOISE) // 노이즈 임계값
 		  {
 			  printf("maxVal: %lu , TH_NOISE: %lu \r\n", maxVal, TH_NOISE);
 			  uint32_t freq_hz = (maxIndex * SAMPLE_RATE) / FFT_LEN;
-			  // 속도 = 주파수 / 44 (24.125GHz 기준)
-			  uint32_t speed_x10 = (freq_hz * 10) / 44;
+			  speed_x10 = (freq_hz * 10) / 44;
 
-			  // 세그먼트 출력
-			  FND_SetNumber(speed_x10);
-
-			  printf("Freq: %lu Hz, Speed: %lu.%lu km/h\r\n", freq_hz, speed_x10/10, speed_x10%10);
-//			  sprintf(debug_buffer, "Freq: %lu Hz, Speed: %lu.%lu km/h", freq_hz, speed_x10/10, speed_x10%10);
-			  debug_speed = speed_x10/10;
-			  debug_speed_x10 = speed_x10;
-
-			  Update_Sensor_Data_SPI((speed_x10/10)>TH_OVERSPEED_km_h, speed_x10/10);
+			  printf("maxIndex: %lu Hz, Speed: %lu.%lu km/h\r\n", maxIndex, speed_x10/10, speed_x10%10);
 		  }
-		  // fft결과 디버깅용
-//		  for(volatile int i = 0 ; i<FFT_LEN; i++){
-//			  debug_mag = fft_mag_q15[i];
-//			  for(volatile int k=0; k<1000; k++); // 데이터 유실방지용
-//		  }
-//		  tx_data.is_overspeed
+
+		  if (speed_x10 >= held_speed_x10 && speed_x10 > 0)  {
+			  held_speed_x10 = speed_x10;
+			  last_peak_tick = HAL_GetTick();
+		  }
+		  else {
+			  // 신호가 낮아지거나 사라진 경우, HOLD_TIME_MS(1초)가 지나면 현재 값(0 포함)으로 갱신
+			  if (HAL_GetTick() - last_peak_tick > HOLD_TIME_MS)   {
+			  	held_speed_x10 = speed_x10;
+			  }
+		  }
+
+		  // 세그먼트 출력
+		  FND_SetNumber(held_speed_x10);
+//			  sprintf(debug_buffer, "Freq: %lu Hz, Speed: %lu.%lu km/h", freq_hz, speed_x10/10, speed_x10%10);
+		  debug_speed = speed_x10/10;
+		  debug_speed_x10 = speed_x10;
+		  Update_Sensor_Data_SPI((speed_x10/10)>TH_OVERSPEED_km_h, speed_x10/10);
 	  }
 	  HAL_GPIO_TogglePin(LD2_GPIO_Port, LD2_Pin);
   }
@@ -906,7 +956,28 @@ void StartMenuTask(void const * argument)
 					  else if(*(menuItems[currentMenuIdx].target_value) > menuItems[currentMenuIdx].max)
 						  *(menuItems[currentMenuIdx].target_value) = menuItems[currentMenuIdx].max;
 				  }
-				  else if (pin == sw_ok_Pin || pin == sw_back_Pin) currentState = STATE_MENU_LIST; // 저장/취소 후 복귀
+				  else if (pin == sw_ok_Pin){
+					  if (currentMenuIdx == 3) { // Noise Search 메뉴
+						  if (noise_search_trigger == 0) {
+							  // 서칭 시작 전 마스크 초기화 (모든 주파수 차단 해제)
+//							  for(int i=0; i < FFT_LEN/2; i++) noise_bin_mask[i] = 0;
+							  noise_search_trigger = 1;
+						  }
+						  else if (noise_search_trigger == 2) {
+							  // 탐색 완료 후 OK 누르면 메뉴로 탈출
+							  noise_search_trigger = 0;
+							  currentState = STATE_MENU_LIST;
+						  }
+					  }
+					  else {
+						  currentState = STATE_MENU_LIST;
+					  }
+				  }
+				  else if (pin == sw_back_Pin) {
+					  noise_search_trigger = 0;
+					  currentState = STATE_MENU_LIST;
+				  }
+
 				  break;
 		  }
 	  }
