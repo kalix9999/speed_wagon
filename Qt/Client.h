@@ -7,6 +7,7 @@
 #include <QKeyEvent>
 #include <QTimer>
 #include <QProcess>
+#include <QtEndian>
 
 typedef struct{
     uint32_t start;

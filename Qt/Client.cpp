@@ -11,7 +11,7 @@ Client::Client(QWidget *parent) :
 
     socket = new QTcpSocket(this);
     connect(socket, &QTcpSocket::readyRead, this, &Client::onReadyRead);
-    connectToHost("192.168.0.16");
+    connectToHost("192.168.0.23");
 
     this->setFocusPolicy(Qt::StrongFocus);
 
@@ -55,10 +55,10 @@ void Client::onReadyRead()
             buffer.remove(0, sizeof(PacketHeader));
 
 
-            header.start    = ntohl(header.start);
-            header.img_size = ntohl(header.img_size);
-            header.speed    = ntohl(header.speed);
-            header.checksum = ntohl(header.checksum);
+            header.start    = qFromBigEndian(header.start);
+            header.img_size = qFromBigEndian(header.img_size);
+            header.speed    = qFromBigEndian(header.speed);
+            header.checksum = qFromBigEndian(header.checksum);
 
             headerReceived = true;
         }
