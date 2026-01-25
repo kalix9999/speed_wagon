@@ -9,13 +9,16 @@
 #include <QProcess>
 #include <QtEndian>
 
+
+#pragma pack(push, 1)
 typedef struct{
     uint32_t start;
     uint32_t img_size;
     uint32_t speed;
-    uint64_t time;
+    //uint64_t time;
     uint32_t checksum;
 }PacketHeader;
+#pragma pack(pop)
 
 namespace Ui {
 class Client;
@@ -49,7 +52,9 @@ private:
     QTimer *timer;
     int current_angle = 90;
     bool isLeftPressed = false;
-    bool isRightPressed = false;
+    bool isRightPressed = false;         // 데이터 쌓아두는 창고
+    PacketHeader currentHeader= {0, };// 현재 처리 중인 헤더 정보
+    bool isHeaderReceived = false;
 
     void sendMqttCommand(int angle);
 };

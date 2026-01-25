@@ -24,13 +24,13 @@
      </rect>
     </property>
     <property name="frameShape">
-     <enum>QFrame::Box</enum>
+     <enum>QFrame::Shape::Box</enum>
     </property>
     <property name="text">
      <string>사진 대기 중...</string>
     </property>
     <property name="alignment">
-     <set>Qt::AlignCenter</set>
+     <set>Qt::AlignmentFlag::AlignCenter</set>
     </property>
    </widget>
    <widget class="QTextBrowser" name="textBrowser">
@@ -41,6 +41,19 @@
       <width>740</width>
       <height>120</height>
      </rect>
+    </property>
+   </widget>
+   <widget class="QLabel" name="connect_state">
+    <property name="geometry">
+     <rect>
+      <x>610</x>
+      <y>10</y>
+      <width>181</width>
+      <height>20</height>
+     </rect>
+    </property>
+    <property name="text">
+     <string>TextLabel</string>
     </property>
    </widget>
   </widget>
