@@ -14,6 +14,7 @@ MenuItem menuItems[] = {
     {"1.TH OverSpeed", &TH_OVERSPEED_km_h, 5, 100, 5} // 과속 기준값 설정
     ,{"2.TH_NOISE", &TH_NOISE, 0, 2000, 10} // 노이즈 기준치 값
     ,{"3.FFT_Max_Value", &debug_maxVal, 0, 5000, 0} // 노이즈 기준치 값
+    ,{"4.Noise Search", &noise_search_trigger, 0, 1, 1} // 메뉴 추가
 };
 
 void menu_init(){
@@ -43,9 +44,17 @@ void UpdateLCD(UI_State state, int menuIdx) {
         case STATE_SET_VALUE:
             lcd_put_cur(0, 0);
             lcd_send_string(menuItems[menuIdx].title);
-            sprintf(buf, "Value: %ld", *(menuItems[menuIdx].target_value));
-            lcd_put_cur(1, 0);
-            lcd_send_string(buf);
+
+            if (menuIdx == 3) { // Noise Search 메뉴 처리
+				lcd_put_cur(1, 0);
+				if (noise_search_trigger == 0) lcd_send_string("Click to OK");
+				else if (noise_search_trigger == 1) lcd_send_string("Searching Noise");
+				else if (noise_search_trigger == 2) lcd_send_string("Done! Click OK");
+			} else {
+				sprintf(buf, "Value: %ld", *(menuItems[menuIdx].target_value));
+				lcd_put_cur(1, 0);
+				lcd_send_string(buf);
+			}
             break;
     }
 }
