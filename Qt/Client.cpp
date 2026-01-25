@@ -11,7 +11,7 @@ Client::Client(QWidget *parent) :
 
     socket = new QTcpSocket(this);
     connect(socket, &QTcpSocket::readyRead, this, &Client::onReadyRead);
-    connectToHost("192.168.0.23");
+    connectToHost("192.168.0.16");
 
     this->setFocusPolicy(Qt::StrongFocus);
 
@@ -39,25 +39,44 @@ void Client::onReadyRead()
 {
 
     buffer.append(socket->readAll());
+
+
     while (true)
     {
-        if (imageSize == 0)
-        {
-            if (buffer.size() < 4) return;
-            QDataStream stream(buffer);
-            stream >> imageSize;
-            buffer.remove(0, 4);
-        }
-        if (buffer.size() < imageSize) return;
+        PacketHeader header;
+        bool headerReceived = false;
 
-        QByteArray imageData = buffer.mid(0, imageSize);
-        buffer.remove(0, imageSize);
-        imageSize = 0;
+        if (!headerReceived)
+        {
+            if (buffer.size() < sizeof(PacketHeader))
+                return;
+
+            memcpy(&header, buffer.constData(), sizeof(PacketHeader));
+            buffer.remove(0, sizeof(PacketHeader));
+
+
+            header.start    = ntohl(header.start);
+            header.img_size = ntohl(header.img_size);
+            header.speed    = ntohl(header.speed);
+            header.checksum = ntohl(header.checksum);
+
+            headerReceived = true;
+        }
+
+
+        if (buffer.size() < header.img_size)
+            return;
+
+        QByteArray imageData = buffer.left(header.img_size);
+        buffer.remove(0, header.img_size);
+
+        headerReceived = false;
 
         QPixmap pixmap;
         if (pixmap.loadFromData(imageData)) {
-            ui->label_image->setPixmap(pixmap.scaled(ui->label_image->size(), Qt::KeepAspectRatio));
-
+            ui->label_image->setPixmap(
+                pixmap.scaled(ui->label_image->size(), Qt::KeepAspectRatio)
+                );
         }
     }
 }
@@ -68,7 +87,7 @@ void Client::keyPressEvent(QKeyEvent *event)
 {
     if (event->key() == Qt::Key_Left) {
         isLeftPressed = true;
-        if (!timer->isActive()) timer->start(50); // 50ms 간격으로 타이머 시작
+        if (!timer->isActive()) timer->start(50);
         qDebug()<<"left!";
     }
     else if (event->key() == Qt::Key_Right) {

@@ -8,6 +8,14 @@
 #include <QTimer>
 #include <QProcess>
 
+typedef struct{
+    uint32_t start;
+    uint32_t img_size;
+    uint32_t speed;
+    uint64_t time;
+    uint32_t checksum;
+}PacketHeader;
+
 namespace Ui {
 class Client;
 }
